@@ -129,6 +129,14 @@ function makeSyncNodesAction() {
 	};
 }
 
+// A variable as the engine started here sees it: one in its environment hides the one
+// in its .env, which it loads without overriding
+function engineVariable(name) {
+	if (name in process.env) return process.env[name];
+	const file = path.join(DIST_ROOT, 'server', '.env');
+	return fs.existsSync(file) ? require('dotenv').parse(fs.readFileSync(file))[name] : undefined;
+}
+
 // The test server: the one --taskserver names, or an engine started here with the
 // test mocks, under the runtime nodes:test asks for
 function makeStartTestServerAction(options = {}) {
@@ -158,6 +166,21 @@ function makeStartTestServerAction(options = {}) {
 				basePort: 40000, // Use 40000 range for node tests
 				env: {
 					ROCKETRIDE_MOCK: mocksPath,
+					// Under --runtime=docker the mocks reach each task's container through a mount,
+					// next to whatever RR_DOCKER_MOUNTS already names, here or in the engine's .env
+					...(options.runtime === 'docker'
+						? {
+								RR_DOCKER_MOUNTS: [
+									...new Set([
+										...(engineVariable('RR_DOCKER_MOUNTS') || '')
+											.split(',')
+											.map((name) => name.trim())
+											.filter(Boolean),
+										'ROCKETRIDE_MOCK',
+									]),
+								].join(','),
+							}
+						: {}),
 				},
 				onOutput: (text) => {
 					if (taskComplete) return;
